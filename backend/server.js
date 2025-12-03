@@ -135,9 +135,10 @@ app.get("/products", (req, res) => {
 app.get("/products/:id", (req, res) => {
   const productId = req.params.id;
 
-  const query = `SELECT * FROM products WHERE id = ${productId}`;
+  const query = `SELECT * FROM products WHERE id = ?`;
+  const value = [`${productId}`];
 
-  db.get(query, [], (err, rows) => {
+  db.get(query, value, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows || {});
   });
