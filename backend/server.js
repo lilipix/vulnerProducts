@@ -112,7 +112,7 @@ app.get("/products/search", (req, res) => {
   // const query = `SELECT * FROM products WHERE title LIKE '%${searchTerm}%' OR description LIKE '%${searchTerm}%' OR category LIKE '%${searchTerm}%'`;
 
   const query = `SELECT * FROM products WHERE title LIKE ? OR description LIKE ? OR category LIKE ?`;
-  const values = ["%${searchTerm}%", "%${searchTerm}%", "%${searchTerm}%"];
+  const values = [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`];
 
   console.log("Search query:", query);
 
