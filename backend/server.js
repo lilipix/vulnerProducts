@@ -3,37 +3,24 @@ const cors = require("cors");
 
 const app = express();
 const axios = require("axios");
-import argon2 from "argon2";
-const sqlite3 = require("sqlite3").verbose();
+const argon2 = require("argon2");
+
+require("reflect-metadata");
 
 const port = 8000;
 
 app.use(cors());
 
-const db = new sqlite3.Database("./database.db", (err) => {
-  if (err) console.error(err.message);
-  else console.log("Connected to SQLite database.");
-});
+const { dataSource } = require("./datasource");
 
-db.run(`CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE NOT NULL,
-  email TEXT NOT NULL,
-  password TEXT NOT NULL,
-  is_admin INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS products (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  description TEXT,
-  price REAL NOT NULL,
-  image TEXT,
-  category TEXT,
-  rating_rate REAL,
-  rating_count INTEGER
-)`);
+dataSource
+  .initialize()
+  .then(() => {
+    console.log("TypeORM connecté à SQLite !");
+  })
+  .catch((err) => {
+    console.error("Erreur TypeORM :", err);
+  });
 
 async function insertRandomUsers() {
   try {
@@ -50,48 +37,42 @@ async function insertRandomUsers() {
 
       const hashedPassword = await argon2.hash(password);
 
-      db.run(
-        `INSERT INTO users (username, email, password, is_admin) VALUES (?, ?, ?, 0)`,
-        [username, email, hashedPassword],
+      const userRepo = dataSource.getRepository("User");
 
-        (err) => {
-          if (err) console.error(err.message);
-        }
-      );
+      const user = userRepo.create({
+        username,
+        email,
+        password: hashedPassword,
+        isAdmin: 0,
+      });
+
+      await UserRepo.save(user);
     });
     console.log("Inserted 5 random users into database.");
   } catch (err) {
     console.error("Error inserting users:", err.message);
   }
 }
-
 async function insertProductsFromAPI() {
   try {
     const response = await axios.get("https://fakestoreapi.com/products");
     const products = response.data;
 
-    products.forEach((p) => {
-      const title = p.title.replace(/'/g, "''");
-      const description = p.description.replace(/'/g, "''");
-      const category = p.category.replace(/'/g, "''");
+    const productRepo = dataSource.getRepository("Product");
 
-      db.run(
-        `INSERT INTO products (title, description, price, image, category, rating_rate, rating_count) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          title,
-          description,
-          p.price,
-          p.image,
-          category,
-          p.rating.rate,
-          p.rating.count,
-        ],
-        (err) => {
-          if (err) console.error("Error inserting product:", err.message);
-        }
-      );
-    });
+    for (const p of products) {
+      const product = productRepo.create({
+        title: p.title,
+        description: p.description,
+        price: p.price,
+        image: p.image,
+        category: p.category,
+        rating_rate: p.rating.rate,
+        rating_count: p.rating.count,
+      });
+
+      await productRepo.save(product);
+    }
 
     console.log(`Inserted ${products.length} products into database.`);
   } catch (err) {
@@ -109,42 +90,51 @@ app.get("/generate-products", async (req, res) => {
   res.send("products generated");
 });
 
-app.get("/products/search", (req, res) => {
-  const searchTerm = req.query.q || "";
+app.get("/products/search", async (req, res) => {
+  try {
+    const searchTerm = req.query.q || "";
 
-  console.log(req.query.q);
+    const products = await datasource
+      .getRepository("Product")
+      .createQueryBuilder("product")
+      .where("product.title LIKE :search", { search: `%${searchTerm}%` })
+      .orWhere("product.description LIKE :search", {
+        search: `%${searchTerm}%`,
+      })
+      .orWhere("product.category LIKE :search", { search: `%${searchTerm}%` })
+      .getMany();
 
-  const query = `SELECT * FROM products WHERE title LIKE ? OR description LIKE ? OR category LIKE ?`;
-  const values = [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`];
-
-  console.log("Search query:", query);
-
-  db.all(query, values, [], (err, rows) => {
-    if (err) {
-      console.error("SQL Error:", err.message);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(rows);
-  });
+    res.json(products);
+  } catch (err) {
+    console.error("Error TypeORM:", err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
-app.get("/products", (req, res) => {
-  db.all("SELECT * FROM products", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+app.get("/products", async (req, res) => {
+  try {
+    const product = dataSource.getRepository("Product");
+    const products = await product.find();
+
+    res.json(products);
+  } catch (err) {
+    console.error("Erreur TypeORM :", err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
-app.get("/products/:id", (req, res) => {
-  const productId = req.params.id;
+app.get("/products/:id", async (req, res) => {
+  try {
+    const productId = req.params.id;
 
-  const query = `SELECT * FROM products WHERE id = ?`;
-  const value = [`${productId}`];
+    const productRepo = dataSource.getRepository("Product");
+    const product = await productRepo.findOneBy({ id: productId });
 
-  db.get(query, value, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || {});
-  });
+    res.json(product);
+  } catch (err) {
+    console.error("Erreur TypeORM :", err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
 app.get("/", (req, res) => {
