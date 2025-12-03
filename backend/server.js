@@ -48,7 +48,9 @@ async function insertRandomUsers() {
       const email = u.email;
 
       db.run(
-        `INSERT INTO users (username, email, password, is_admin) VALUES ('${username}', '${email}', '${password}', 0)`,
+        `INSERT INTO users (username, email, password, is_admin) VALUES (?, ?, ?, 0)`,
+        [username, email, password],
+
         (err) => {
           if (err) console.error(err.message);
         }
