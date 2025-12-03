@@ -3,6 +3,7 @@ const cors = require("cors");
 
 const app = express();
 const axios = require("axios");
+import argon2 from "argon2";
 const sqlite3 = require("sqlite3").verbose();
 
 const port = 8000;
@@ -42,14 +43,16 @@ async function insertRandomUsers() {
     const results = await Promise.all(urls);
     const users = results.map((r) => r.data.results[0]);
 
-    users.forEach((u) => {
+    users.forEach(async (u) => {
       const username = u.login.username;
       const password = u.login.password;
       const email = u.email;
 
+      const hashedPassword = await argon2.hash(password);
+
       db.run(
         `INSERT INTO users (username, email, password, is_admin) VALUES (?, ?, ?, 0)`,
-        [username, email, password],
+        [username, email, hashedPassword],
 
         (err) => {
           if (err) console.error(err.message);
@@ -110,8 +113,6 @@ app.get("/products/search", (req, res) => {
   const searchTerm = req.query.q || "";
 
   console.log(req.query.q);
-
-  // const query = `SELECT * FROM products WHERE title LIKE '%${searchTerm}%' OR description LIKE '%${searchTerm}%' OR category LIKE '%${searchTerm}%'`;
 
   const query = `SELECT * FROM products WHERE title LIKE ? OR description LIKE ? OR category LIKE ?`;
   const values = [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`];
